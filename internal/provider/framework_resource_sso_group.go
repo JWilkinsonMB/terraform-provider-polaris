@@ -31,6 +31,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/identityschema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -47,6 +48,7 @@ The ´polaris_sso_group´ resource is used to create and manage SSO groups in RS
 
 var (
 	_ resource.Resource                = &ssoGroupResource{}
+	_ resource.ResourceWithIdentity    = &ssoGroupResource{}
 	_ resource.ResourceWithImportState = &ssoGroupResource{}
 )
 
@@ -60,6 +62,10 @@ type ssoGroupResourceModel struct {
 	DomainName   types.String `tfsdk:"domain_name"`
 	GroupName    types.String `tfsdk:"group_name"`
 	RoleIDs      types.Set    `tfsdk:"role_ids"`
+}
+
+type ssoGroupIdentityModel struct {
+	ID types.String `tfsdk:"id"`
 }
 
 func newSSOGroupResource() resource.Resource {
@@ -127,6 +133,19 @@ func (r *ssoGroupResource) Schema(ctx context.Context, _ resource.SchemaRequest,
 	}
 }
 
+func (r *ssoGroupResource) IdentitySchema(ctx context.Context, _ resource.IdentitySchemaRequest, res *resource.IdentitySchemaResponse) {
+	tflog.Trace(ctx, "ssoGroupResource.IdentitySchema")
+
+	res.IdentitySchema = identityschema.Schema{
+		Attributes: map[string]identityschema.Attribute{
+			keyID: identityschema.StringAttribute{
+				RequiredForImport: true,
+				Description:       "SSO group ID.",
+			},
+		},
+	}
+}
+
 func (r *ssoGroupResource) Configure(ctx context.Context, req resource.ConfigureRequest, res *resource.ConfigureResponse) {
 	tflog.Trace(ctx, "ssoGroupResource.Configure")
 
@@ -181,6 +200,12 @@ func (r *ssoGroupResource) Create(ctx context.Context, req resource.CreateReques
 	plan.ID = types.StringValue(group.ID)
 	plan.DomainName = types.StringValue(group.DomainName)
 	res.Diagnostics.Append(res.State.Set(ctx, &plan)...)
+	if res.Diagnostics.HasError() {
+		return
+	}
+
+	identity := ssoGroupIdentityModel{ID: plan.ID}
+	res.Diagnostics.Append(res.Identity.Set(ctx, identity)...)
 }
 
 func (r *ssoGroupResource) Read(ctx context.Context, req resource.ReadRequest, res *resource.ReadResponse) {
@@ -223,6 +248,12 @@ func (r *ssoGroupResource) Read(ctx context.Context, req resource.ReadRequest, r
 	state.GroupName = types.StringValue(group.Name)
 	state.RoleIDs = roleIDsSet
 	res.Diagnostics.Append(res.State.Set(ctx, &state)...)
+	if res.Diagnostics.HasError() {
+		return
+	}
+
+	identity := ssoGroupIdentityModel{ID: state.ID}
+	res.Diagnostics.Append(res.Identity.Set(ctx, identity)...)
 }
 
 func (r *ssoGroupResource) Update(ctx context.Context, req resource.UpdateRequest, res *resource.UpdateResponse) {
@@ -284,6 +315,12 @@ func (r *ssoGroupResource) Update(ctx context.Context, req resource.UpdateReques
 	plan.DomainName = types.StringValue(group.DomainName)
 	plan.RoleIDs = roleIDsSet
 	res.Diagnostics.Append(res.State.Set(ctx, &plan)...)
+	if res.Diagnostics.HasError() {
+		return
+	}
+
+	identity := ssoGroupIdentityModel{ID: plan.ID}
+	res.Diagnostics.Append(res.Identity.Set(ctx, identity)...)
 }
 
 func (r *ssoGroupResource) Delete(ctx context.Context, req resource.DeleteRequest, res *resource.DeleteResponse) {
@@ -313,10 +350,39 @@ func (r *ssoGroupResource) Delete(ctx context.Context, req resource.DeleteReques
 func (r *ssoGroupResource) ImportState(ctx context.Context, req resource.ImportStateRequest, res *resource.ImportStateResponse) {
 	tflog.Trace(ctx, "ssoGroupResource.ImportState")
 
+	polarisClient, err := r.client.polaris()
+	if err != nil {
+		res.Diagnostics.AddError("RSC client error", err.Error())
+		return
+	}
+
+	// Import by identity block (Terraform 1.12+).
+	if req.Identity != nil {
+		var identity ssoGroupIdentityModel
+		res.Diagnostics.Append(req.Identity.Get(ctx, &identity)...)
+		if res.Diagnostics.HasError() {
+			return
+		}
+
+		res.Diagnostics.Append(res.State.SetAttribute(ctx, path.Root(keyID), identity.ID.ValueString())...)
+		res.Diagnostics.Append(res.Identity.Set(ctx, identity)...)
+		return
+	}
+
+	// Import by raw UUID.
+	if _, err := uuid.Parse(req.ID); err == nil {
+		res.Diagnostics.Append(res.State.SetAttribute(ctx, path.Root(keyID), req.ID)...)
+
+		identity := ssoGroupIdentityModel{ID: types.StringValue(req.ID)}
+		res.Diagnostics.Append(res.Identity.Set(ctx, identity)...)
+		return
+	}
+
+	// Import by legacy composite format: "<group_name>:<identity_provider_id>".
 	parts := strings.SplitN(req.ID, ":", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		res.Diagnostics.AddError("Invalid import ID",
-			`Expected import ID format: "<group_name>:<identity_provider_id>"`)
+			`Expected a UUID or the legacy format "<group_name>:<identity_provider_id>"`)
 		return
 	}
 	groupName := parts[0]
@@ -328,12 +394,6 @@ func (r *ssoGroupResource) ImportState(ctx context.Context, req resource.ImportS
 		return
 	}
 
-	polarisClient, err := r.client.polaris()
-	if err != nil {
-		res.Diagnostics.AddError("RSC client error", err.Error())
-		return
-	}
-
 	group, err := access.Wrap(polarisClient).SSOGroupByNameAndAuthDomain(ctx, groupName, authDomainID)
 	if err != nil {
 		res.Diagnostics.AddError("Failed to read SSO group", err.Error())
@@ -342,6 +402,9 @@ func (r *ssoGroupResource) ImportState(ctx context.Context, req resource.ImportS
 
 	res.Diagnostics.Append(res.State.SetAttribute(ctx, path.Root(keyID), group.ID)...)
 	res.Diagnostics.Append(res.State.SetAttribute(ctx, path.Root(keyAuthDomainID), authDomainID)...)
+
+	identity := ssoGroupIdentityModel{ID: types.StringValue(group.ID)}
+	res.Diagnostics.Append(res.Identity.Set(ctx, identity)...)
 }
 
 // collectRoleIDs extracts role UUIDs from the model RoleIDs set.

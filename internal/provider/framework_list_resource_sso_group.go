@@ -28,52 +28,57 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"github.com/rubrikinc/rubrik-polaris-sdk-for-go/pkg/polaris/access"
+	gqlaccess "github.com/rubrikinc/rubrik-polaris-sdk-for-go/pkg/polaris/graphql/access"
 )
 
-const listResourceUserDescription = `
-The ´polaris_user´ list resource lists local users in RSC.
+const listResourceSSOGroupDescription = `
+The ´polaris_sso_group´ list resource lists SSO groups in RSC.
 `
 
 var (
-	_ list.ListResource              = &userListResource{}
-	_ list.ListResourceWithConfigure = &userListResource{}
+	_ list.ListResource              = &ssoGroupListResource{}
+	_ list.ListResourceWithConfigure = &ssoGroupListResource{}
 )
 
-type userListResource struct {
+type ssoGroupListResource struct {
 	client *client
 }
 
-type userListConfigModel struct {
-	Email types.String `tfsdk:"email"`
+type ssoGroupListConfigModel struct {
+	Name         types.String `tfsdk:"name"`
+	AuthDomainID types.String `tfsdk:"auth_domain_id"`
 }
 
-func newUserListResource() list.ListResource {
-	return &userListResource{}
+func newSSOGroupListResource() list.ListResource {
+	return &ssoGroupListResource{}
 }
 
-func (r *userListResource) Metadata(ctx context.Context, req resource.MetadataRequest, res *resource.MetadataResponse) {
-	tflog.Trace(ctx, "userListResource.Metadata")
+func (r *ssoGroupListResource) Metadata(ctx context.Context, req resource.MetadataRequest, res *resource.MetadataResponse) {
+	tflog.Trace(ctx, "ssoGroupListResource.Metadata")
 
-	res.TypeName = req.ProviderTypeName + "_" + keyUser
+	res.TypeName = req.ProviderTypeName + "_" + keySSOGroup
 }
 
-func (r *userListResource) ListResourceConfigSchema(ctx context.Context, _ list.ListResourceSchemaRequest, res *list.ListResourceSchemaResponse) {
-	tflog.Trace(ctx, "userListResource.ListResourceConfigSchema")
+func (r *ssoGroupListResource) ListResourceConfigSchema(ctx context.Context, _ list.ListResourceSchemaRequest, res *list.ListResourceSchemaResponse) {
+	tflog.Trace(ctx, "ssoGroupListResource.ListResourceConfigSchema")
 
 	res.Schema = listschema.Schema{
-		Description: description(listResourceUserDescription),
+		Description: description(listResourceSSOGroupDescription),
 		Attributes: map[string]listschema.Attribute{
-			keyEmail: listschema.StringAttribute{
+			keyName: listschema.StringAttribute{
 				Optional:    true,
-				Description: "Filter users by email. Matches users whose email contains the given value (case-insensitive).",
+				Description: "Filter SSO groups by name. Matches groups whose name contains the given value (case-insensitive).",
+			},
+			keyAuthDomainID: listschema.StringAttribute{
+				Optional:    true,
+				Description: "Filter SSO groups by auth domain ID (identity provider ID).",
 			},
 		},
 	}
 }
 
-func (r *userListResource) Configure(ctx context.Context, req resource.ConfigureRequest, res *resource.ConfigureResponse) {
-	tflog.Trace(ctx, "userListResource.Configure")
+func (r *ssoGroupListResource) Configure(ctx context.Context, req resource.ConfigureRequest, res *resource.ConfigureResponse) {
+	tflog.Trace(ctx, "ssoGroupListResource.Configure")
 
 	if req.ProviderData == nil {
 		return
@@ -81,10 +86,10 @@ func (r *userListResource) Configure(ctx context.Context, req resource.Configure
 	r.client = req.ProviderData.(*client)
 }
 
-func (r *userListResource) List(ctx context.Context, req list.ListRequest, stream *list.ListResultsStream) {
-	tflog.Trace(ctx, "userListResource.List")
+func (r *ssoGroupListResource) List(ctx context.Context, req list.ListRequest, stream *list.ListResultsStream) {
+	tflog.Trace(ctx, "ssoGroupListResource.List")
 
-	var config userListConfigModel
+	var config ssoGroupListConfigModel
 	diags := req.Config.Get(ctx, &config)
 	if diags.HasError() {
 		stream.Results = list.ListResultsStreamDiagnostics(diags)
@@ -98,25 +103,32 @@ func (r *userListResource) List(ctx context.Context, req list.ListRequest, strea
 		return
 	}
 
-	emailFilter := config.Email.ValueString()
-	users, err := access.Wrap(polarisClient).Users(ctx, emailFilter)
+	var filter gqlaccess.SSOGroupFilter
+	if !config.Name.IsNull() {
+		filter.Name = config.Name.ValueString()
+	}
+	if !config.AuthDomainID.IsNull() {
+		filter.AuthDomainIDs = []string{config.AuthDomainID.ValueString()}
+	}
+
+	groups, err := gqlaccess.ListSSOGroups(ctx, polarisClient.GQL, filter)
 	if err != nil {
-		diags.AddError("Failed to list users", err.Error())
+		diags.AddError("Failed to list SSO groups", err.Error())
 		stream.Results = list.ListResultsStreamDiagnostics(diags)
 		return
 	}
 
 	stream.Results = func(push func(list.ListResult) bool) {
-		for i, user := range users {
+		for i, group := range groups {
 			if int64(i) >= req.Limit {
 				return
 			}
 
 			result := req.NewListResult(ctx)
-			result.DisplayName = user.Email
+			result.DisplayName = group.Name
 
-			identity := userIdentityModel{
-				ID: types.StringValue(user.ID),
+			identity := ssoGroupIdentityModel{
+				ID: types.StringValue(group.ID),
 			}
 			result.Diagnostics.Append(result.Identity.Set(ctx, identity)...)
 			if result.Diagnostics.HasError() {
@@ -125,8 +137,8 @@ func (r *userListResource) List(ctx context.Context, req list.ListRequest, strea
 			}
 
 			if req.IncludeResource {
-				roleIDs := make([]string, 0, len(user.Roles))
-				for _, role := range user.Roles {
+				roleIDs := make([]string, 0, len(group.Roles))
+				for _, role := range group.Roles {
 					roleIDs = append(roleIDs, role.ID.String())
 				}
 				roleIDsSet, setDiags := types.SetValueFrom(ctx, types.StringType, roleIDs)
@@ -136,13 +148,11 @@ func (r *userListResource) List(ctx context.Context, req list.ListRequest, strea
 					return
 				}
 
-				model := userResourceModel{
-					ID:             types.StringValue(user.ID),
-					Domain:         types.StringValue(string(user.Domain)),
-					Email:          types.StringValue(user.Email),
-					IsAccountOwner: types.BoolValue(user.IsAccountOwner),
-					RoleIDs:        roleIDsSet,
-					Status:         types.StringValue(user.Status),
+				model := ssoGroupResourceModel{
+					ID:         types.StringValue(group.ID),
+					DomainName: types.StringValue(group.DomainName),
+					GroupName:  types.StringValue(group.Name),
+					RoleIDs:    roleIDsSet,
 				}
 				result.Diagnostics.Append(result.Resource.Set(ctx, model)...)
 				if result.Diagnostics.HasError() {

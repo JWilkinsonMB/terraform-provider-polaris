@@ -17,11 +17,11 @@ list "polaris_user" "all" {
   provider = polaris
 }
 
-list "polaris_user" "filtered" {
+list "polaris_user" "by_email" {
   provider = polaris
 
   config {
-    email = "john.doe@example.com"
+    email = "auditor@example.org"
   }
 }
 ```
@@ -31,4 +31,4 @@ list "polaris_user" "filtered" {
 
 ### Optional
 
-- `email` (String) Filter users by email.
+- `email` (String) Filter users by email. Matches users whose email contains the given value (case-insensitive).

@@ -17,7 +17,7 @@ list "polaris_custom_role" "all" {
   provider = polaris
 }
 
-list "polaris_custom_role" "filtered" {
+list "polaris_custom_role" "by_name" {
   provider = polaris
 
   config {
@@ -31,4 +31,4 @@ list "polaris_custom_role" "filtered" {
 
 ### Optional
 
-- `name` (String) Filter roles by name.
+- `name` (String) Filter roles by name. Matches roles whose name contains the given value (case-insensitive).
