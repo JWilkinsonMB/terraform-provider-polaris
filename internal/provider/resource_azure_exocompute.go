@@ -254,11 +254,13 @@ func resourceAzureExocompute() *schema.Resource {
 			keySkipValidation: {
 				Type:     schema.TypeBool,
 				Optional: true,
-				ForceNew: false,
+				Default:  false,
+				ForceNew: true,
 				Description: "Skip validation of the Exocompute configuration by Rubrik Security Cloud prior " +
 					"to creation. This is needed where Private DNS zones are used and they exist outside of " +
 					"the subscription in which Exocompute is being deployed as this configuration must be " +
-					"managed outside of Rubrik Security Cloud and cannot be validated. Use with caution. ",
+					"managed outside of Rubrik Security Cloud and cannot be validated. Changing this forces " +
+					"a new resource to be created. Defaults to `false`.",
 			},
 			keySubnet: {
 				Type:          schema.TypeString,
@@ -279,6 +281,12 @@ func resourceAzureExocompute() *schema.Resource {
 					"**Deprecated:** use `cloud_account_id` instead.",
 				Deprecated:   "use `cloud_account_id` instead.",
 				ValidateFunc: validation.IsUUID,
+			},
+			keyTriggerHealthCheck: {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				ForceNew:    true,
+				Description: "Trigger a health check for the Exocompute configuration. Changing this forces a new resource to be created. Defaults to `false`.",
 			},
 		},
 		Importer: &schema.ResourceImporter{
@@ -334,18 +342,20 @@ func azureCreateExocompute(ctx context.Context, d *schema.ResourceData, m interf
 					SkipValidation:        d.Get(keySkipValidation).(bool),
 					PodOverlayNetworkCIDR: podOverlayNetworkCIDR.(string),
 					OptionalConfig:        fromAzureOptionalConfig(d),
+					TriggerHealthCheck:    d.Get(keyTriggerHealthCheck).(bool),
 				}, nil
 			}
 		} else if subnet, ok := d.GetOk(keySubnet); ok {
 			// RSC managed host configuration.
 			exoConfig = func(ctx context.Context, cloudAccountID uuid.UUID) (gqlexocompute.CreateAzureConfigurationParams, error) {
 				return gqlexocompute.CreateAzureConfigurationParams{
-					CloudAccountID:    cloudAccountID,
-					IsManagedByRubrik: true,
-					Region:            region.ToCloudAccountRegionEnum(),
-					SubnetID:          subnet.(string),
-					SkipValidation:    d.Get(keySkipValidation).(bool),
-					OptionalConfig:    fromAzureOptionalConfig(d),
+					CloudAccountID:     cloudAccountID,
+					IsManagedByRubrik:  true,
+					Region:             region.ToCloudAccountRegionEnum(),
+					SubnetID:           subnet.(string),
+					SkipValidation:     d.Get(keySkipValidation).(bool),
+					OptionalConfig:     fromAzureOptionalConfig(d),
+					TriggerHealthCheck: d.Get(keyTriggerHealthCheck).(bool),
 				}, nil
 			}
 		} else {
