@@ -367,6 +367,7 @@ const (
 	keySignInURL                                    = "sign_in_url"
 	keySigningCertificate                           = "signing_certificate"
 	keySignOutURL                                   = "sign_out_url"
+	keySkipValidation                               = "skip_validation"
 	keyServersAndApps                               = "servers_and_apps"
 	keySnappableType                                = "snappable_type"
 	keySQLDBProtection                              = "sql_db_protection"

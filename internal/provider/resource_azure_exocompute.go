@@ -251,6 +251,15 @@ func resourceAzureExocompute() *schema.Resource {
 					"Azure style, e.g. `eastus`. Changing this forces a new resource to be created.",
 				ValidateFunc: validation.StringInSlice(gqlazure.AllRegionNames(), false),
 			},
+			keySkipValidation: {
+				Type:     schema.TypeBool,
+				Optional: true,
+				ForceNew: false,
+				Description: "Skip validation of the Exocompute configuration by Rubrik Security Cloud prior " +
+					"to creation. This is needed where Private DNS zones are used and they exist outside of " +
+					"the subscription in which Exocompute is being deployed as this configuration must be " +
+					"managed outside of Rubrik Security Cloud and cannot be validated. Use with caution. ",
+			},
 			keySubnet: {
 				Type:          schema.TypeString,
 				Optional:      true,
@@ -322,6 +331,7 @@ func azureCreateExocompute(ctx context.Context, d *schema.ResourceData, m interf
 					IsManagedByRubrik:     true,
 					Region:                region.ToCloudAccountRegionEnum(),
 					SubnetID:              d.Get(keySubnet).(string),
+					SkipValidation:        d.Get(keySkipValidation).(bool),
 					PodOverlayNetworkCIDR: podOverlayNetworkCIDR.(string),
 					OptionalConfig:        fromAzureOptionalConfig(d),
 				}, nil
@@ -334,6 +344,7 @@ func azureCreateExocompute(ctx context.Context, d *schema.ResourceData, m interf
 					IsManagedByRubrik: true,
 					Region:            region.ToCloudAccountRegionEnum(),
 					SubnetID:          subnet.(string),
+					SkipValidation:    d.Get(keySkipValidation).(bool),
 					OptionalConfig:    fromAzureOptionalConfig(d),
 				}, nil
 			}
