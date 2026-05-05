@@ -28,8 +28,8 @@ github.com/Azure/go-autorest/tracing v0.6.0/go.mod h1:+vhtPC754Xsa23ID7GlGsrdKBp
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/BurntSushi/toml v1.2.1 h1:9F2/+DoOYIOksmaJFPw1tGFy1eDnIJXg+UHjuD8lTak=
 github.com/BurntSushi/toml v1.2.1/go.mod h1:CxXYINrC8qIiEnFrOxCa7Jy5BFHlXnUU2pbicEuybxQ=
-github.com/JWilkinsonMB/rubrik-polaris-sdk-for-go v1.5.1-0.20260429124741-ad920ef1a161 h1:/vXkg0L2yi/MPwNRllpstm9Av3URYhpsxbo5PYd9rwE=
-github.com/JWilkinsonMB/rubrik-polaris-sdk-for-go v1.5.1-0.20260429124741-ad920ef1a161/go.mod h1:i+POnzMq5Wpg2mkVVagrBQwtKCJDyYkduRvvi4j4Wec=
+github.com/JWilkinsonMB/rubrik-polaris-sdk-for-go v1.5.1-0.20260429181551-e55f998c9f58 h1:LPnM1DmtuZMftGH7T2mNlcuqcJA1r4PCb0dUwK5p6To=
+github.com/JWilkinsonMB/rubrik-polaris-sdk-for-go v1.5.1-0.20260429181551-e55f998c9f58/go.mod h1:i+POnzMq5Wpg2mkVVagrBQwtKCJDyYkduRvvi4j4Wec=
 github.com/Kunde21/markdownfmt/v3 v3.1.0 h1:KiZu9LKs+wFFBQKhrZJrFZwtLnCCWJahL+S+E/3VnM0=
 github.com/Kunde21/markdownfmt/v3 v3.1.0/go.mod h1:tPXN1RTyOzJwhfHoon9wUr4HGYmWgVxSQN6VBJDkrVc=
 github.com/Masterminds/goutils v1.1.1 h1:5nUrii3FMTL5diU80unEVvNevw1nH4+ZV4DSLVJLSYI=
